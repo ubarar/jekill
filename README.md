@@ -14,3 +14,8 @@ Built is a part drop in replacement for `jekyll`. Serves the currently directory
 
 Once build, simply run with `jekill`, adding flags `-addr` and `-port` as needed. To add stylesheets to your markdown pages, ensure that there is a `.config/head.html` from where you start `jekill`. The contents of this file will become the innerHTML for the head of every markdown page.
 
+----
+
+### Syntax Highlighting
+
+This builder uses [chroma](https://github.com/alecthomas/chroma) for syntax highlighting. This means that you'll need to take a stylesheet for a highlighter and place it inside `.config/head.html` or reference it otherwise.
