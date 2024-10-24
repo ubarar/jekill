@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"os"
 	"text/template"
@@ -31,40 +32,36 @@ const pageLayout = `
 </html>
 `
 
-var (
-	head           string
-	htmlFormatter  *html.Formatter
-	highlightStyle *chroma.Style
-)
+type Renderer struct {
+	Head           string
+	HtmlFormatter  *html.Formatter
+	HighlightStyle *chroma.Style
+}
 
-func init() {
-	htmlFormatter = html.New(html.WithClasses(true), html.TabWidth(2))
-	if htmlFormatter == nil {
+func NewRenderer(path string) *Renderer {
+	renderer := Renderer{}
+
+	renderer.HtmlFormatter = html.New(html.WithClasses(true), html.TabWidth(2))
+	if renderer.HtmlFormatter == nil {
 		panic("couldn't create html formatter")
 	}
-	styleName := "monokailight"
-	highlightStyle = styles.Get(styleName)
-	if highlightStyle == nil {
-		panic(fmt.Sprintf("didn't find style '%s'", styleName))
+	renderer.HighlightStyle = styles.Get("monokailight")
+	if renderer.HighlightStyle == nil {
+		panic(fmt.Sprintf("didn't find style"))
 	}
 
-	// we cache the contets of <head> into a variable
-	if _, err := os.Stat(".config/head.html"); err != nil {
-		return
+	dat, err := os.ReadFile(filepath.Join(path, ".config/head.html"))
+	if err == nil {
+		renderer.Head = string(dat)
 	}
 
-	dat, err := os.ReadFile(".config/head.html")
-	if err != nil {
-		return
-	}
-
-	head = string(dat)
+	return &renderer
 }
 
 var pageTemplate, _ = template.New("page").Parse(pageLayout)
 
 // copypasta from https://github.com/alecthomas/chroma/blob/master/quick/quick.go
-func htmlHighlight(w io.Writer, source, lang, defaultLang string) error {
+func (r *Renderer) HtmlHighlight(w io.Writer, source, lang, defaultLang string) error {
 	if lang == "" {
 		lang = defaultLang
 	}
@@ -81,39 +78,39 @@ func htmlHighlight(w io.Writer, source, lang, defaultLang string) error {
 	if err != nil {
 		return err
 	}
-	return htmlFormatter.Format(w, highlightStyle, it)
+	return r.HtmlFormatter.Format(w, r.HighlightStyle, it)
 }
 
-func renderCode(w io.Writer, codeBlock *ast.CodeBlock, _ bool) {
+func (r *Renderer) RenderCode(w io.Writer, codeBlock *ast.CodeBlock, _ bool) {
 	defaultLang := ""
 	lang := string(codeBlock.Info)
-	htmlHighlight(w, string(codeBlock.Literal), lang, defaultLang)
+	r.HtmlHighlight(w, string(codeBlock.Literal), lang, defaultLang)
 }
 
-func myRenderHook(w io.Writer, node ast.Node, entering bool) (ast.WalkStatus, bool) {
+func (r *Renderer) MyRenderHook(w io.Writer, node ast.Node, entering bool) (ast.WalkStatus, bool) {
 	if code, ok := node.(*ast.CodeBlock); ok {
-		renderCode(w, code, entering)
+		r.RenderCode(w, code, entering)
 		return ast.GoToNext, true
 	}
 	return ast.GoToNext, false
 }
 
-func newCustomizedRender() *mdhtml.Renderer {
+func (r *Renderer) NewCustomizedRender() *mdhtml.Renderer {
 	opts := mdhtml.RendererOptions{
 		Flags:          mdhtml.CommonFlags,
-		RenderNodeHook: myRenderHook,
+		RenderNodeHook: r.MyRenderHook,
 	}
 	return mdhtml.NewRenderer(opts)
 }
 
-func mdToHTML(md []byte) []byte {
+func (r *Renderer) MdToHTML(md []byte) []byte {
 	// create markdown parser with extensions
 	extensions := parser.CommonExtensions | parser.AutoHeadingIDs | parser.NoEmptyLineBeforeBlock
 	p := parser.NewWithExtensions(extensions)
 	doc := p.Parse(md)
 
 	// create HTML renderer with extensions
-	renderer := newCustomizedRender()
+	renderer := r.NewCustomizedRender()
 
 	return markdown.Render(doc, renderer)
 }
@@ -124,10 +121,10 @@ type Page struct {
 }
 
 // takes a bunch of bytes of markdown and renders an html page
-func Render(md []byte) []byte {
+func (r *Renderer) Render(md []byte) []byte {
 	page := Page{
-		head,
-		string(mdToHTML(md)),
+		r.Head,
+		string(r.MdToHTML(md)),
 	}
 
 	buffer := &bytes.Buffer{}

@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"path/filepath"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -25,7 +26,7 @@ var (
 
 // Serve an existing file to the response writer
 // If the requested file is markdown, render it.
-func ServeFile(w http.ResponseWriter, r *http.Request, path string) {
+func (s Service) ServeFile(w http.ResponseWriter, r *http.Request, path string) {
 	requestsTotal.WithLabelValues(r.URL.RequestURI(), "200").Inc()
 	if !strings.HasSuffix(path, ".md") {
 		http.ServeFile(w, r, path)
@@ -39,7 +40,7 @@ func ServeFile(w http.ResponseWriter, r *http.Request, path string) {
 		return
 	}
 
-	w.Write(render.Render(dat))
+	w.Write(s.Renderer.Render(dat))
 	w.Header().Add("Content-Type", "text/html")
 }
 
@@ -59,43 +60,52 @@ func Custom500(w http.ResponseWriter, r *http.Request) {
 // the index page.
 // If a file doesn't exist, see if there's a corresponding markdown file. This is
 // for cases where the user wants /about, but the page is about.md or about.html
-func (MainHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+func (s Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.RequestURI(), "/")
-
 	if path == "" {
 		path = "index"
 	}
 
-	if _, err := os.Stat(path); err == nil {
-		ServeFile(w, r, path)
+	// where the file actually lives on the filesystem
+	diskPath := filepath.Join(s.Path, path)
+
+	fmt.Println(diskPath)
+
+	if info, err := os.Stat(diskPath); err == nil && !info.IsDir() {
+		s.ServeFile(w, r, diskPath)
 		return
 	}
 
-	if _, err := os.Stat(path + ".md"); err == nil {
-		ServeFile(w, r, path+".md")
+	if info, err := os.Stat(diskPath + ".md"); err == nil && !info.IsDir() {
+		s.ServeFile(w, r, diskPath+".md")
 		return
 	}
 
-	if _, err := os.Stat(path + ".html"); err == nil {
-		ServeFile(w, r, path+".html")
+	if info, err := os.Stat(diskPath + ".html"); err == nil && !info.IsDir() {
+		s.ServeFile(w, r, diskPath+".html")
 		return
 	}
 
 	Custom404(w, r)
 }
 
-type MainHandler struct{}
+type Service struct{
+	Path string
+	Renderer *render.Renderer
+}
 
 func main() {
-	// http.Handle("/metrics", promhttp.Handler())
+	path := flag.String("path", "", "path where we should look for all files")
 	addr := flag.String("addr", "0.0.0.0", "address to serve on")
 	port := flag.Int("port", 3000, "port to serve on")
+
+	flag.Parse()
 
 	metricsAddr := flag.String("metricsAddr", "0.0.0.0", "address to serve on")
 	metricsPort := flag.Int("metricsPort", 8080, "port to serve on")
 
 	go func() {
-		err := http.ListenAndServe(fmt.Sprintf("%s:%d", *addr, *port), MainHandler{})
+		err := http.ListenAndServe(fmt.Sprintf("%s:%d", *addr, *port), Service{Path: *path, Renderer: render.NewRenderer(*path)})
 		if err != nil {
 			log.Fatal(err)
 		}
