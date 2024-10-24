@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"log"
 	"os"
 	"text/template"
 
@@ -33,7 +32,7 @@ const pageLayout = `
 `
 
 var (
-	head string
+	head           string
 	htmlFormatter  *html.Formatter
 	highlightStyle *chroma.Style
 )

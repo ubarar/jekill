@@ -1,5 +1,8 @@
-run:
+run: fmt
 	cd cmd && go run main.go
 
-build:
-	cd cmd && go build -o jekill main.go
+build: fmt
+	go build -o jekill cmd/main.go && cp cmd/jekill .
+
+fmt:
+	gofmt -s -w **/*.go

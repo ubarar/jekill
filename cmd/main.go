@@ -8,12 +8,25 @@ import (
 	"os"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/ubarar/jekill/render"
+)
+
+var (
+	requestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "jekill_requests_total",
+		Help: "The total number of requests",
+	},
+		[]string{"path", "code"})
 )
 
 // Serve an existing file to the response writer
 // If the requested file is markdown, render it.
 func ServeFile(w http.ResponseWriter, r *http.Request, path string) {
+	requestsTotal.WithLabelValues(r.URL.RequestURI(), "200").Inc()
 	if !strings.HasSuffix(path, ".md") {
 		http.ServeFile(w, r, path)
 		return
@@ -22,7 +35,7 @@ func ServeFile(w http.ResponseWriter, r *http.Request, path string) {
 	// .md file, it must be rendered
 	dat, err := os.ReadFile(path)
 	if err != nil {
-		Custom500(w)
+		Custom500(w, r)
 		return
 	}
 
@@ -30,12 +43,14 @@ func ServeFile(w http.ResponseWriter, r *http.Request, path string) {
 	w.Header().Add("Content-Type", "text/html")
 }
 
-func Custom404(w http.ResponseWriter) {
+func Custom404(w http.ResponseWriter, r *http.Request) {
+	requestsTotal.WithLabelValues(r.URL.RequestURI(), "404").Inc()
 	w.WriteHeader(404)
 	w.Write([]byte("Could not find"))
 }
 
-func Custom500(w http.ResponseWriter) {
+func Custom500(w http.ResponseWriter, r *http.Request) {
+	requestsTotal.WithLabelValues(r.URL.RequestURI(), "404").Inc()
 	w.WriteHeader(500)
 	w.Write([]byte("Internal error detected"))
 }
@@ -44,7 +59,7 @@ func Custom500(w http.ResponseWriter) {
 // the index page.
 // If a file doesn't exist, see if there's a corresponding markdown file. This is
 // for cases where the user wants /about, but the page is about.md or about.html
-func MainHandler(w http.ResponseWriter, r *http.Request) {
+func (MainHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.RequestURI(), "/")
 
 	if path == "" {
@@ -66,15 +81,27 @@ func MainHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	Custom404(w)
+	Custom404(w, r)
 }
 
+type MainHandler struct{}
+
 func main() {
+	// http.Handle("/metrics", promhttp.Handler())
 	addr := flag.String("addr", "0.0.0.0", "address to serve on")
 	port := flag.Int("port", 3000, "port to serve on")
-	http.HandleFunc("/", MainHandler)
 
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", *addr, *port), nil)
+	metricsAddr := flag.String("metricsAddr", "0.0.0.0", "address to serve on")
+	metricsPort := flag.Int("metricsPort", 8080, "port to serve on")
+
+	go func() {
+		err := http.ListenAndServe(fmt.Sprintf("%s:%d", *addr, *port), MainHandler{})
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", *metricsAddr, *metricsPort), promhttp.Handler())
 	if err != nil {
 		log.Fatal(err)
 	}
