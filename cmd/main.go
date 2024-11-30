@@ -4,10 +4,11 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
-	"strings"
 	"path/filepath"
+	"strings"
 
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -69,7 +70,7 @@ func (s Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// where the file actually lives on the filesystem
 	diskPath := filepath.Join(s.Path, path)
 
-	fmt.Println(diskPath)
+	slog.Debug("Looking for file", "path", diskPath)
 
 	if info, err := os.Stat(diskPath); err == nil && !info.IsDir() {
 		s.ServeFile(w, r, diskPath)
@@ -89,8 +90,8 @@ func (s Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	Custom404(w, r)
 }
 
-type Service struct{
-	Path string
+type Service struct {
+	Path     string
 	Renderer *render.Renderer
 }
 
