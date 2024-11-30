@@ -6,3 +6,6 @@ build: fmt
 
 fmt:
 	gofmt -s -w **/*.go
+
+image:
+	docker build -t jekill:latest .
