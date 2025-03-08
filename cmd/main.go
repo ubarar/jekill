@@ -10,25 +10,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promauto"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-
 	"github.com/ubarar/jekill/render"
-)
-
-var (
-	requestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
-		Name: "jekill_requests_total",
-		Help: "The total number of requests",
-	},
-		[]string{"path", "code"})
 )
 
 // Serve an existing file to the response writer
 // If the requested file is markdown, render it.
 func (s Service) ServeFile(w http.ResponseWriter, r *http.Request, path string) {
-	requestsTotal.WithLabelValues(r.URL.RequestURI(), "200").Inc()
 	if !strings.HasSuffix(path, ".md") {
 		http.ServeFile(w, r, path)
 		return
@@ -46,13 +33,11 @@ func (s Service) ServeFile(w http.ResponseWriter, r *http.Request, path string) 
 }
 
 func Custom404(w http.ResponseWriter, r *http.Request) {
-	requestsTotal.WithLabelValues(r.URL.RequestURI(), "404").Inc()
 	w.WriteHeader(404)
 	w.Write([]byte("Could not find"))
 }
 
 func Custom500(w http.ResponseWriter, r *http.Request) {
-	requestsTotal.WithLabelValues(r.URL.RequestURI(), "404").Inc()
 	w.WriteHeader(500)
 	w.Write([]byte("Internal error detected"))
 }
@@ -63,6 +48,7 @@ func Custom500(w http.ResponseWriter, r *http.Request) {
 // for cases where the user wants /about, but the page is about.md or about.html
 func (s Service) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.TrimPrefix(r.URL.RequestURI(), "/")
+	path = strings.Split(path, "?")[0] // deal with query params
 	if path == "" {
 		path = "index"
 	}
@@ -102,18 +88,10 @@ func main() {
 
 	flag.Parse()
 
-	metricsAddr := flag.String("metricsAddr", "0.0.0.0", "address to serve on")
-	metricsPort := flag.Int("metricsPort", 8080, "port to serve on")
-
 	go func() {
 		err := http.ListenAndServe(fmt.Sprintf("%s:%d", *addr, *port), Service{Path: *path, Renderer: render.NewRenderer(*path)})
 		if err != nil {
 			log.Fatal(err)
 		}
 	}()
-
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", *metricsAddr, *metricsPort), promhttp.Handler())
-	if err != nil {
-		log.Fatal(err)
-	}
 }
