@@ -88,10 +88,8 @@ func main() {
 
 	flag.Parse()
 
-	go func() {
-		err := http.ListenAndServe(fmt.Sprintf("%s:%d", *addr, *port), Service{Path: *path, Renderer: render.NewRenderer(*path)})
-		if err != nil {
-			log.Fatal(err)
-		}
-	}()
+	err := http.ListenAndServe(fmt.Sprintf("%s:%d", *addr, *port), Service{Path: *path, Renderer: render.NewRenderer(*path)})
+	if err != nil {
+		log.Fatal(err)
+	}
 }
