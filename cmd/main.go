@@ -2,7 +2,6 @@ package main
 
 import (
 	"flag"
-	"fmt"
 	"log"
 	"log/slog"
 	"net/http"
@@ -10,12 +9,27 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promauto"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+
 	"github.com/ubarar/jekill/render"
+)
+
+var (
+	requestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "jekill_requests_total",
+		Help: "The total number of requests",
+	},
+		[]string{"path", "code"})
+
+// introduce a historgram here maybe
 )
 
 // Serve an existing file to the response writer
 // If the requested file is markdown, render it.
 func (s Service) ServeFile(w http.ResponseWriter, r *http.Request, path string) {
+	requestsTotal.WithLabelValues(r.URL.RequestURI(), "200").Inc()
 	if !strings.HasSuffix(path, ".md") {
 		http.ServeFile(w, r, path)
 		return
@@ -33,11 +47,13 @@ func (s Service) ServeFile(w http.ResponseWriter, r *http.Request, path string) 
 }
 
 func Custom404(w http.ResponseWriter, r *http.Request) {
+	requestsTotal.WithLabelValues(r.URL.RequestURI(), "404").Inc()
 	w.WriteHeader(404)
 	w.Write([]byte("Could not find"))
 }
 
 func Custom500(w http.ResponseWriter, r *http.Request) {
+	requestsTotal.WithLabelValues(r.URL.RequestURI(), "500").Inc()
 	w.WriteHeader(500)
 	w.Write([]byte("Internal error detected"))
 }
@@ -83,12 +99,19 @@ type Service struct {
 
 func main() {
 	path := flag.String("path", "", "path where we should look for all files")
-	addr := flag.String("addr", "0.0.0.0", "address to serve on")
-	port := flag.Int("port", 3000, "port to serve on")
+	addr := flag.String("addr", "0.0.0.0:3000", "address to serve on")
+	metricsAddr := flag.String("metricsAddr", "0.0.0.0:8080", "address to serve on")
 
 	flag.Parse()
 
-	err := http.ListenAndServe(fmt.Sprintf("%s:%d", *addr, *port), Service{Path: *path, Renderer: render.NewRenderer(*path)})
+	go func() {
+		err := http.ListenAndServe(*addr, Service{Path: *path, Renderer: render.NewRenderer(*path)})
+		if err != nil {
+			log.Fatal(err)
+		}
+	}()
+
+	err := http.ListenAndServe(*metricsAddr, promhttp.Handler())
 	if err != nil {
 		log.Fatal(err)
 	}
